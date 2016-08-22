@@ -4,7 +4,7 @@ require 'aws-sdk'
 require 'date'
 require_relative 'administrator'
 
-class BotMaker
+class ComputeController
   include Administrator
   begin
     def initialize
