@@ -1,5 +1,5 @@
 require 'dotenv'
-Dotenv.load('.bot_maker.env')
+Dotenv.load('scc.env')
 require 'aws-sdk'
 require 'date'
 require_relative 'administrator'
