@@ -59,19 +59,7 @@ class ComputeController
 
       ec2.wait_until(:instance_running, instance_ids: ids) do
         puts "#{Time.now}\n\twaiting for #{ids.count} instances..."
-      end
-
-      ec2.create_tags(
-        resources: ids,
-        tags: [{
-            key: 'Name',
-            values: 'crawlBot-started'
-          }, {
-            key: 'AMI Name',
-            values: "crawlBot_#{Time.now.to_i}"
-          }
-        ]
-      )
+      end      
       ids
     end
 
