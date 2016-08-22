@@ -1,5 +1,5 @@
 require 'dotenv'
-Dotenv.load('scc.env')
+Dotenv.load('.scc.env')
 require 'aws-sdk'
 require 'date'
 require_relative 'administrator'
