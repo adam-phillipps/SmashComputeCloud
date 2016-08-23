@@ -2,22 +2,30 @@ require 'dotenv'
 Dotenv.load('.scc.env')
 require 'aws-sdk'
 require 'date'
-require_relative 'administrator'
+require_relative './administrator'
 
 class ComputeController
   include Administrator
+
   begin
     def initialize
       begin
-        puts "Begining to poll at #{Time.now}.."
+        logger.info "Begining to poll at #{Time.now}.."
+        Thread.new { send_frequent_status_updates(15) }
         poll
       rescue Exception => e
-        puts "Fatal error durring polling #{Time.now}:\n#{e}"
+        logger.info "Fatal error durring polling #{Time.now}:\n#{e}"
       end
     end
 
      def poll
       loop do
+        message = {
+          instanceId: self_id,
+          type: 'status_update',
+          content: 'Polling...',
+        }.to_json
+        send_status_to_stream(self_id, message)
         run_program(adjusted_spawning_ratio)
         sleep 5 # slow the polling
       end
@@ -32,7 +40,7 @@ class ComputeController
 
     def run_program(desired_instance_count)
       if desired_instance_count > 0
-        puts "#{Time.now}\n\tstart #{desired_instance_count} instances"
+        logger.info "#{Time.now}\n\tstart #{desired_instance_count} instances"
         max_request_size = 100 # safe maximum number of instances to request at once
         bot_ids = []
 
@@ -42,12 +50,12 @@ class ComputeController
           chunks.times { bot_ids.concat(spin_up_instances(max_request_size)) }
           bot_ids.concat(spin_up_instances(leftover))
 
-          puts "started #{bot_ids.count} instances:\ninstance ids:\n\t#{bot_ids}"
+          logger.info "started #{bot_ids.count} instances:\ninstance ids:\n\t#{bot_ids}"
         rescue Aws::EC2::Errors::DryRunOperation => e
-          puts e
+          logger.info e.message
         end
       else
-        puts "#{Time.now}\n\treceived 0 requested instance count. starting 0 instances..."
+        logger.info "#{Time.now}\n\treceived 0 requested instance count. starting 0 instances..."
       end
     end
 
@@ -56,10 +64,11 @@ class ComputeController
       ids = response.instances.map(&:instance_id)
 
       add_to_working_bots_count(ids)
+      update_status_checks(ids, 'Starting...')
 
       ec2.wait_until(:instance_running, instance_ids: ids) do
-        puts "#{Time.now}\n\twaiting for #{ids.count} instances..."
-      end      
+        logger.info "#{Time.now}\n\twaiting for #{ids.count} instances..."
+      end
       ids
     end
 
@@ -89,6 +98,7 @@ class ComputeController
     def instance_config(desired_instance_count)
       count = desired_instance_count.to_i
       {
+        dry_run: true,
         image_id:                 bot_image_id,
         instance_type:            instance_type,
         min_count:                count,
@@ -115,10 +125,35 @@ class ComputeController
     def instance_type
       @instance_type ||= ENV['INSTANCE_TYPE']
     end
-  rescue => e
-    puts e
-    kill_everything
+  rescue Exception => e
+    msg = [e.message, e.backtrace.join("\n")].join("\n")
+    message = {
+    instanceId: self_id,
+    type: 'status_update',
+    content: 'Exploding...',
+    extraInfo: msg
+   }.to_json
+    logger.fatal message
+    send_status_to_stream(self_id, msg)
   end
 end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ComputeController.new
