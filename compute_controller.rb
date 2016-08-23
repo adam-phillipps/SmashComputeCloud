@@ -9,13 +9,13 @@ class ComputeController
 
   begin
     def initialize
-      begin
+      # begin
         logger.info "Begining to poll at #{Time.now}.."
         Thread.new { send_frequent_status_updates(15) }
         poll
-      rescue Exception => e
-        logger.info "Fatal error durring polling #{Time.now}:\n#{e}"
-      end
+      # rescue Exception => e
+        # logger.info "Fatal error durring polling #{Time.now}:\n#{e}"
+      # end
     end
 
      def poll

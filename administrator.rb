@@ -8,15 +8,15 @@ require 'byebug'
 
 module Administrator
   def boot_time
-    Time.now.to_i # comment the code below for development mode
-    # @instance_boot_time ||=
-    #   ec2.describe_instances(instance_ids:[self_id]).
-    #     reservations[0].instances[0].launch_time.to_i
+    # Time.now.to_i # comment the code below for development mode
+    @instance_boot_time ||=
+      ec2.describe_instances(instance_ids:[self_id]).
+        reservations[0].instances[0].launch_time.to_i
   end
 
   def self_id
-    'test-id' # comment the below line for development mode
-    # @id ||= HTTParty.get('http://169.254.169.254/latest/meta-data/instance-id')
+    # 'test-id' # comment the below line for development mode
+    @id ||= HTTParty.get('http://169.254.169.254/latest/meta-data/instance-id')
   end
 
   def poller(board)
@@ -119,6 +119,7 @@ module Administrator
      content: 'Count',
      extraInfo: { board => count }
     }.to_json
+
     update_status_checks(self_id, message)
     count
   end
@@ -244,7 +245,7 @@ module Administrator
           it_worked = true
         end
         it_worked
-      rescue Exception => e #ResourceNotFoundException => e
+      rescue ResourceNotFoundException => e
         create_stream
       end
     end
@@ -306,7 +307,7 @@ module Administrator
           content: status
          }.to_json
 
-      update_status_checks(self_id, status)
+      update_status_checks([self_id], status)
       sleep sleep_time
     end
   end
