@@ -9,13 +9,14 @@ class ComputeController
 
   begin
     def initialize
-      # begin
+      begin
         logger.info "Begining to poll at #{Time.now}.."
         Thread.new { send_frequent_status_updates(15) }
         poll
-      # rescue Exception => e
-        # logger.info "Fatal error durring polling #{Time.now}:\n#{e}"
-      # end
+      rescue Exception => e
+        logger.info "Fatal error durring polling #{Time.now}:\n" +
+          "#{[e.message, e.backtrace.join("\n")].join("\n")}"
+      end
     end
 
      def poll
@@ -45,6 +46,7 @@ class ComputeController
         bot_ids = []
 
         chunks = (desired_instance_count.to_f / max_request_size).floor
+        chunks = 1 if chunks == 0
         leftover = (desired_instance_count % max_request_size).floor
         begin
           chunks.times { bot_ids.concat(spin_up_instances(max_request_size)) }
@@ -98,7 +100,6 @@ class ComputeController
     def instance_config(desired_instance_count)
       count = desired_instance_count.to_i
       {
-        dry_run: true,
         image_id:                 bot_image_id,
         instance_type:            instance_type,
         min_count:                count,
@@ -137,23 +138,5 @@ class ComputeController
     send_status_to_stream(self_id, msg)
   end
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 ComputeController.new
