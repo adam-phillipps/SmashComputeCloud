@@ -47,6 +47,6 @@ class TestData
 end
 
 
-TestData.new.add(2)
-# TestData.new.delete('wip')
+TestData.new.add(20)
+# TestData.new.delete('counter')
 # TestData.new.terminate_instances

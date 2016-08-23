@@ -46,8 +46,8 @@ class ComputeController
         bot_ids = []
 
         chunks = (desired_instance_count.to_f / max_request_size).floor
-        chunks = 1 if chunks == 0
         leftover = (desired_instance_count % max_request_size).floor
+
         begin
           chunks.times { bot_ids.concat(spin_up_instances(max_request_size)) }
           bot_ids.concat(spin_up_instances(leftover))
@@ -57,7 +57,7 @@ class ComputeController
           logger.info e.message
         end
       else
-        logger.info "#{Time.now}\n\treceived 0 requested instance count. starting 0 instances..."
+        logger.info "Received 0 requested instance count. starting 0 instances..."
       end
     end
 
