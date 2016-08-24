@@ -21,12 +21,7 @@ class ComputeController
 
      def poll
       loop do
-        message = {
-          instanceId: self_id,
-          type: 'status_update',
-          content: 'Polling...',
-        }.to_json
-        send_status_to_stream(self_id, message)
+        send_status_to_stream(self_id, update_message_body(content: 'polling'))
         run_program(adjusted_spawning_ratio)
         sleep 5 # slow the polling
       end
@@ -66,7 +61,7 @@ class ComputeController
       ids = response.instances.map(&:instance_id)
 
       add_to_working_bots_count(ids)
-      update_status_checks(ids, 'Starting...')
+      update_status_checks(ids, update_message_body(content: 'starting'))
 
       ec2.wait_until(:instance_running, instance_ids: ids) do
         logger.info "#{Time.now}\n\twaiting for #{ids.count} instances..."
@@ -127,15 +122,10 @@ class ComputeController
       @instance_type ||= ENV['INSTANCE_TYPE']
     end
   rescue Exception => e
-    msg = [e.message, e.backtrace.join("\n")].join("\n")
-    message = {
-    instanceId: self_id,
-    type: 'status_update',
-    content: 'Exploding...',
-    extraInfo: msg
-   }.to_json
+    msg = { error_message: e.message, stacktrace: e.backtrace.join("\n") }
+    message = update_message_body(content: 'shutting-down', extraInfo: msg)
     logger.fatal message
-    send_status_to_stream(self_id, msg)
+    send_status_to_stream(self_id, message)
   end
 end
 

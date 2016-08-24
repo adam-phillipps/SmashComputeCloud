@@ -113,12 +113,11 @@ module Administrator
       attribute_names: ['ApproximateNumberOfMessages']
     ).attributes['ApproximateNumberOfMessages'].to_f
 
-    message = {
-     instanceID: self_id,
-     type: 'SitRep',
-     content: 'Count',
-     extraInfo: { board => count }
-    }.to_json
+    message = update_message_body(
+      type: 'SitRep',
+      content: 'Count',
+      extraInfo: { board => count }
+    )
 
     update_status_checks(self_id, message)
     count
@@ -176,12 +175,10 @@ module Administrator
 
   def notification_of_death
     blame = errors.sort_by(&:reverse).last.first
-    message = {
-     instanceID: self_id,
-     type: 'status_update',
-     content: 'Dying',
-     extraInfo: blame
-    }.to_json
+    message = update_message_body(
+      content: 'dying',
+      extraInfo: { reason: blame }
+    )
 
     update_status_checks(self_id, message)
     sqs.send_message(
@@ -316,10 +313,10 @@ module Administrator
 
   def update_message_body(opts = {})
     {
-      instanceId:       opts[:instanceId] || self_id,
-      type:             opts[:type] || 'status_update',
-      content:          opts[:content] || 'running',
-      extraInfo:        opts[:extraInfo] || {}
+      instanceId:       self_id,
+      type:             'status_update',
+      content:          'running',
+      extraInfo:        {}
     }.merge(opts).to_json
   end
 end
