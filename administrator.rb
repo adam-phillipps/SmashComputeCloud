@@ -157,6 +157,7 @@ module Administrator
   end
 
   def die!
+    Thread.kill(@status_thread)
     notification_of_death
 
     poller('counter').poll(max_number_of_messages: 1) do |msg|
@@ -295,18 +296,30 @@ module Administrator
 
   def send_frequent_status_updates(sleep_time = 5)
     while true
-      status = 'Testing' # comment the lines below for development mode
-      # status = ec2.describe_instances(instance_ids: [self_id]).
-      #   reservations[0].instances[0].state.name.capitalize
-      logger.info "Send update to status board " +
-        {
-          instanceId: self_id,
-          type: 'status_update',
-          content: status
-         }.to_json
+      # status = 'Testing' # comment the lines below for development mode
+      status = ec2.describe_instances(instance_ids: [self_id]).
+        reservations[0].instances[0].state.name
+      logger.info "Send update to status board #{update_message_body}"
 
-      update_status_checks([self_id], status)
+      update_status_checks(self_id, update_message_body)
       sleep sleep_time
     end
+  end
+
+  def stream_message_body(opts = {})
+    {
+      stream_name:      opts[:stream_name] || status_stream_name,
+      data:             opts[:data] || update_message_body(opts),
+      partition_key:    opts[:partition_key] || self_id
+    }
+  end
+
+  def update_message_body(opts = {})
+    {
+      instanceId:       opts[:instanceId] || self_id,
+      type:             opts[:type] || 'status_update',
+      content:          opts[:content] || 'running',
+      extraInfo:        opts[:extraInfo] || {}
+    }.merge(opts).to_json
   end
 end
