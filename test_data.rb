@@ -48,6 +48,6 @@ class TestData
 end
 
 
-# TestData.new.add(3)
+TestData.new.add(3)
 # TestData.new.delete('counter')
 # TestData.new.terminate_instances

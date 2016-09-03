@@ -1,6 +1,6 @@
 require 'dotenv'
 # Dotenv.load("/home/ubuntu/crawler/.crawl_bot.env")
-Dotenv.load(".crawl_bot.env")
+Dotenv.load(".scc.env")
 require 'aws-sdk'
 Aws.use_bundled_cert!
 require 'httparty'
