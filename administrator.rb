@@ -1,3 +1,6 @@
+require 'dotenv'
+# Dotenv.load("/home/ubuntu/crawler/.crawl_bot.env")
+Dotenv.load(".crawl_bot.env")
 require 'aws-sdk'
 Aws.use_bundled_cert!
 require 'httparty'
@@ -8,15 +11,24 @@ require 'byebug'
 
 module Administrator
   def boot_time
-    # Time.now.to_i # comment the code below for development mode
+    # @boot_time ||= Time.now.to_i # comment the code below for development mode
     @instance_boot_time ||=
       ec2.describe_instances(instance_ids:[self_id]).
         reservations[0].instances[0].launch_time.to_i
   end
 
   def self_id
-    # 'test-id' # comment the below line for development mode
-    @id ||= HTTParty.get('http://169.254.169.254/latest/meta-data/instance-id')
+    # @self_id ||= 'test-id' # comment the below line for development mode
+    @id ||= HTTParty.get('http://169.254.169.254/latest/meta-data/instance-id').parsed_response
+  end
+
+  def url
+    # @url ||= 'https://test-url.com'
+    @url ||= HTTParty.get('http://169.254.169.254/latest/meta-data/hostname').parsed_response
+  end
+
+  def identity
+    @identity
   end
 
   def poller(board)
@@ -104,7 +116,7 @@ module Administrator
   end
 
   def jobs_ratio_denominator
-    @jobs_ratio_denominator ||= ENV['RATIO_DENOMINATOR'].to_i
+    @jobs_ratio_denominator ||= 1 # ENV['RATIO_DENOMINATOR'].to_i
   end
 
   def get_count(board)
@@ -114,17 +126,23 @@ module Administrator
     ).attributes['ApproximateNumberOfMessages'].to_f
 
     message = update_message_body(
-      type: 'SitRep',
-      content: 'Count',
-      extraInfo: { board => count }
+     instanceID: self_id,
+     url:          url,
+     type:        'SitRep',
+     content:     'board-count',
+     extraInfo:   { board => count }
     )
 
     update_status_checks(self_id, message)
     count
   end
 
-  def filename
-    @filename ||= ENV['LOG_FILE']
+  def ami_name
+    @ami_name ||= ENV['AMI_NAME'] || 'crawlbotprod'
+  end
+
+  def log_file
+    @log_file ||= ENV['LOG_FILE']
   end
 
   def logger
@@ -142,7 +160,7 @@ module Administrator
   end
 
   def send_logs_to_s3
-    File.open(filename) do |file|
+    File.open(log_file) do |file|
       s3.put_object(
         bucket: log_bucket,
         key: self_id,
@@ -156,7 +174,7 @@ module Administrator
   end
 
   def die!
-    Thread.kill(@status_thread)
+    Thread.kill(@status_thread) unless @status_thread.nil?
     notification_of_death
 
     poller('counter').poll(max_number_of_messages: 1) do |msg|
@@ -176,8 +194,10 @@ module Administrator
   def notification_of_death
     blame = errors.sort_by(&:reverse).last.first
     message = update_message_body(
-      content: 'dying',
-      extraInfo: { reason: blame }
+      url:          url,
+      type:         'status-update',
+      content:      'dying',
+      extraInfo:    { cause: blame, stack_trace: errors[blame] }
     )
 
     update_status_checks(self_id, message)
@@ -189,6 +209,7 @@ module Administrator
       queue_url: needs_attention_address,
       message_body: message
     )
+    send_status_to_stream(self_id, message)
     logger.info("The cause for the shutdown is #{blame}")
   end
 
@@ -199,10 +220,9 @@ module Administrator
       ids,
       status
     )
-    send_status_to_stream(ids, status)
   end
 
-  def send_status_to_stream(ids, status)
+  def send_status_to_stream(ids, message)
     ids = ids.kind_of?(Array) ? ids : [ids.to_s]
     it_worked = false
 
@@ -211,19 +231,19 @@ module Administrator
         if ids.count == 1
           resp = kinesis.put_record(
             stream_name: status_stream_name,
-            data: status,
-            partition_key: ids.first
+            data: message,
+            partition_key: ids.first.to_s
           )
 
           unless resp[:sequence_number] && resp[:shard_id]
-            send_status_to_stream(ids, status)
+            send_status_to_stream(ids, message)
           end
 
           it_worked = true
         elsif ids.count > 1
           resp = kinesis.put_records(
             stream_name: status_stream_name,
-            records: ids.map { |id| { data: status, partition_key: id } }
+            records: ids.map { |id| { data: message, partition_key: id.to_s } }
           )
 
           if resp.failed_record_count > 0
@@ -262,7 +282,7 @@ module Administrator
       if e.kind_of? Aws::Kinesis::Errors::ResourceInUseException
         logger.info "Stream already created"
       else
-        errors[:ruby] << [e.message, e.backtrace].join("\n")
+        errors[:ruby] << format_error_message(e)
       end
     end
   end
@@ -279,26 +299,17 @@ module Administrator
     )
   end
 
-  def for_each_id_send_message_to(board, ids, message)
-    ids.each do |id|
-      sqs.send_message(
-        queue_url: board,
-        message_body: { "#{id}": "#{message}" }.to_json
-      )
-      # TODO:
-      # resend unsuccessful messages
-    end
-    true
-  end
-
-  def send_frequent_status_updates(sleep_time = 5)
+  def send_frequent_status_updates(opts = {})
+    sleep_time = opts.delete(:interval) || 5
     while true
       # status = 'Testing' # comment the lines below for development mode
       status = ec2.describe_instances(instance_ids: [self_id]).
         reservations[0].instances[0].state.name
-      logger.info "Send update to status board #{update_message_body}"
+      updated = update_message_body(opts)
+      logger.info "Status update: #{updated}"
 
-      update_status_checks(self_id, update_message_body)
+      send_status_to_stream(self_id, updated)
+      update_status_checks(self_id, updated)
       sleep sleep_time
     end
   end
@@ -312,11 +323,41 @@ module Administrator
   end
 
   def update_message_body(opts = {})
-    {
+    msg = {
       instanceId:       self_id,
-      type:             'status_update',
+      identity:         identity || 'none-aquired',
+      url:              url,
+      type:             'status-update',
       content:          'running',
       extraInfo:        {}
-    }.merge(opts).to_json
+    }.merge(opts)
+    msg.to_json
+  end
+
+  def format_error_message(error)
+    begin
+      [error.message, error.backtrace.join("\n")].join("\n")
+    rescue Exception => e
+      error
+    end
+  end
+
+  def for_each_id_send_message_to(board, ids, message)
+    ids.each do |id|
+
+      sqs.send_message(
+        queue_url: board,
+        message_body: { "#{id}": "#{message}" }.to_json
+      )
+      # TODO:
+      # resend unsuccessful messages
+    end
+    true
+  end
+
+  def creds
+    @creds ||= Aws::Credentials.new(
+      ENV['AWS_ACCESS_KEY_ID'],
+      ENV['AWS_SECRET_ACCESS_KEY'])
   end
 end

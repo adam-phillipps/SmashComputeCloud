@@ -11,7 +11,7 @@ class ComputeController
     def initialize
       begin
         logger.info "Begining to poll at #{Time.now}.."
-        @status_thread = Thread.new { send_frequent_status_updates(15) }
+        @status_thread = Thread.new { send_frequent_status_updates(interval: 15) }
         poll
       rescue Exception => e
         logger.info "Fatal error durring polling #{Time.now}:\n" +
@@ -21,7 +21,7 @@ class ComputeController
 
      def poll
       loop do
-        send_status_to_stream(self_id, update_message_body(content: 'polling'))
+        # send_status_to_stream(self_id, update_message_body(content: 'polling'))
         run_program(adjusted_spawning_ratio)
         sleep 5 # slow the polling
       end
@@ -36,7 +36,7 @@ class ComputeController
 
     def run_program(desired_instance_count)
       if desired_instance_count > 0
-        logger.info "#{Time.now}\n\tstart #{desired_instance_count} instances"
+        logger.info "start #{desired_instance_count} instances"
         max_request_size = 100 # safe maximum number of instances to request at once
         bot_ids = []
 
@@ -57,15 +57,27 @@ class ComputeController
     end
 
     def spin_up_instances(request_size)
-      response = ec2.run_instances(instance_config(request_size))
-      ids = response.instances.map(&:instance_id)
+      ids = nil
+      begin
+        response = ec2.run_instances(instance_config(request_size))
+        ids = response.instances.map(&:instance_id)
+      rescue Aws::EC2::Errors::DryRunOperation => e
+        ids = (1..request_size).to_a.map { |n| n.to_s }
+      end
+      message = update_message_body(content: 'neurons-starting')
 
       add_to_working_bots_count(ids)
-      update_status_checks(ids, update_message_body(content: 'starting'))
+      send_status_to_stream(ids, message)
+      update_status_checks(ids, message)
 
       ec2.wait_until(:instance_running, instance_ids: ids) do
-        logger.info "#{Time.now}\n\twaiting for #{ids.count} instances..."
+        logger.info "waiting for #{ids.count} neurons..."
       end
+
+      started_message = update_message_body(content: 'neurons-started')
+      send_status_to_stream(ids, started_message)
+      update_status_checks(ids, started_message)
+
       ids
     end
 
@@ -95,6 +107,7 @@ class ComputeController
     def instance_config(desired_instance_count)
       count = desired_instance_count.to_i
       {
+        dry_run: true,
         image_id:                 bot_image_id,
         instance_type:            instance_type,
         min_count:                count,
