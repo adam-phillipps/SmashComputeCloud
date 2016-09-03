@@ -107,7 +107,6 @@ class ComputeController
     def instance_config(desired_instance_count)
       count = desired_instance_count.to_i
       {
-        dry_run: true,
         image_id:                 bot_image_id,
         instance_type:            instance_type,
         min_count:                count,

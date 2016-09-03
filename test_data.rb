@@ -14,7 +14,8 @@ class TestData
       sqs.send_message(
         queue_url: board,
         message_body: {
-          'category': ['traffic','visit','aliens'].sample
+          identity: (0..100).to_a.sample,
+          message: 'createInstance'
         }.to_json
       )
     end
@@ -47,6 +48,6 @@ class TestData
 end
 
 
-TestData.new.add(20)
+# TestData.new.add(3)
 # TestData.new.delete('counter')
 # TestData.new.terminate_instances
